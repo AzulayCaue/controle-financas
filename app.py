@@ -58,10 +58,10 @@ def listar(gastos):
     if not gastos:
         print("Nenhum gasto ainda.")
         return
-    for gasto in gastos:
+    for i, gasto in enumerate(gastos, start=1):
         data = gasto.get("data", "sem data")
         categoria = gasto.get("categoria", "sem categoria")
-        print(f"{data} | {gasto['descricao']} [{categoria}]: R$ {gasto['valor']:.2f}")
+        print(f"{i}) {data} | {gasto['descricao']} [{categoria}]: R$ {gasto['valor']:.2f}")
 
 
 def resumo(gastos):
@@ -84,6 +84,46 @@ def resumo(gastos):
         print(f"{categoria}: R$ {total:.2f}")
     print(f"\nTotal do mês: R$ {sum(totais.values()):.2f}")
 
+def escolher(gastos):
+    listar(gastos)
+    if not gastos:
+        return None
+    texto = input("Número do gasto (Enter para cancelar): ")
+    if texto == "":
+        return None
+    if not texto.isdigit() or not 1 <= int(texto) <= len(gastos):
+        print("Número inválido.")
+        return None
+    return int(texto) - 1
+
+
+def apagar(gastos):
+    i = escolher(gastos)
+    if i is None:
+        return
+    removido = gastos.pop(i)
+    salvar(gastos)
+    print(f"Apagado: {removido['descricao']}")
+
+
+def editar(gastos):
+    i = escolher(gastos)
+    if i is None:
+        return
+    gasto = gastos[i]
+    print("Enter mantém o valor atual.")
+    descricao = input(f"Descrição [{gasto['descricao']}]: ")
+    categoria = input(f"Categoria [{gasto.get('categoria', '')}]: ").lower()
+    if descricao:
+        gasto["descricao"] = descricao
+    if categoria:
+        gasto["categoria"] = categoria
+    if input("Alterar valor? (s/N): ").lower() == "s":
+        gasto["valor"] = ler_valor()
+    if input("Alterar data? (s/N): ").lower() == "s":
+        gasto["data"] = ler_data()
+    salvar(gastos)
+    print("Gasto atualizado!")
 
 gastos = carregar()
 
@@ -91,7 +131,9 @@ while True:
     print("\n1) Adicionar gasto")
     print("2) Listar gastos")
     print("3) Resumo do mês por categoria")
-    print("4) Sair")
+    print("4) Editar gasto")
+    print("5) Apagar gasto")
+    print("6) Sair")
     opcao = input("Escolha: ")
 
     if opcao == "1":
@@ -101,6 +143,10 @@ while True:
     elif opcao == "3":
         resumo(gastos)
     elif opcao == "4":
+        editar(gastos)
+    elif opcao == "5":
+        apagar(gastos)
+    elif opcao == "6":
         break
     else:
         print("Opção inválida.")
