@@ -1,34 +1,38 @@
-import json
-import os
+import sqlite3
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
-ARQUIVO = "gastos.json"
+con = sqlite3.connect("financas.db")
+con.execute(
+    """
+    CREATE TABLE IF NOT EXISTS gastos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        descricao TEXT NOT NULL,
+        categoria TEXT NOT NULL,
+        valor_centavos INTEGER NOT NULL,
+        data TEXT NOT NULL
+    )
+    """
+)
+con.commit()
 
 
-def carregar():
-    if os.path.exists(ARQUIVO):
-        with open(ARQUIVO, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
-
-
-def salvar(gastos):
-    with open(ARQUIVO, "w", encoding="utf-8") as f:
-        json.dump(gastos, f, ensure_ascii=False, indent=2)
+def formatar(centavos):
+    return f"R$ {centavos / 100:.2f}"
 
 
 def ler_valor():
     while True:
         texto = input("Valor: ").replace(",", ".")
         try:
-            valor = float(texto)
-        except ValueError:
+            valor = Decimal(texto)
+        except InvalidOperation:
             print("Valor inválido. Digite um número, ex: 25,50")
             continue
-        if valor <= 0:
-            print("O valor precisa ser maior que zero.")
+        if not valor.is_finite() or valor <= 0:
+            print("O valor precisa ser um número maior que zero.")
             continue
-        return valor
+        return int((valor * 100).to_integral_value())
 
 
 def ler_data():
@@ -42,90 +46,107 @@ def ler_data():
             print("Data inválida. Use o formato 2026-11-12")
 
 
-def adicionar(gastos):
+def adicionar():
     descricao = input("Descrição: ")
     categoria = input("Categoria (ex: mercado, transporte): ").lower()
     valor = ler_valor()
     data = ler_data()
-    gastos.append(
-        {"descricao": descricao, "categoria": categoria, "valor": valor, "data": data}
+    con.execute(
+        "INSERT INTO gastos (descricao, categoria, valor_centavos, data) VALUES (?, ?, ?, ?)",
+        (descricao, categoria, valor, data),
     )
-    salvar(gastos)
+    con.commit()
     print("Gasto registrado!")
 
 
-def listar(gastos):
-    if not gastos:
+def listar():
+    linhas = con.execute(
+        "SELECT id, data, descricao, categoria, valor_centavos FROM gastos ORDER BY data, id"
+    ).fetchall()
+    if not linhas:
         print("Nenhum gasto ainda.")
-        return
-    for i, gasto in enumerate(gastos, start=1):
-        data = gasto.get("data", "sem data")
-        categoria = gasto.get("categoria", "sem categoria")
-        print(f"{i}) {data} | {gasto['descricao']} [{categoria}]: R$ {gasto['valor']:.2f}")
+        return False
+    for id_, data, descricao, categoria, valor in linhas:
+        print(f"{id_}) {data} | {descricao} [{categoria}]: {formatar(valor)}")
+    return True
 
 
-def resumo(gastos):
+def escolher_id():
+    if not listar():
+        return None
+    texto = input("ID do gasto (Enter para cancelar): ")
+    if texto == "":
+        return None
+    if not texto.isdigit():
+        print("ID inválido.")
+        return None
+    existe = con.execute("SELECT 1 FROM gastos WHERE id = ?", (int(texto),)).fetchone()
+    if not existe:
+        print("Não existe gasto com esse ID.")
+        return None
+    return int(texto)
+
+
+def resumo():
     mes_atual = date.today().strftime("%Y-%m")
     mes = input(f"Mês (AAAA-MM, Enter = {mes_atual}): ") or mes_atual
 
-    totais = {}
-    for gasto in gastos:
-        if not gasto.get("data", "").startswith(mes):
-            continue
-        categoria = gasto.get("categoria", "sem categoria")
-        totais[categoria] = totais.get(categoria, 0) + gasto["valor"]
+    linhas = con.execute(
+        """
+        SELECT categoria, SUM(valor_centavos)
+        FROM gastos
+        WHERE data LIKE ?
+        GROUP BY categoria
+        ORDER BY SUM(valor_centavos) DESC
+        """,
+        (mes + "%",),
+    ).fetchall()
 
-    if not totais:
+    if not linhas:
         print("Nenhum gasto nesse mês.")
         return
 
     print(f"\n--- Resumo de {mes} ---")
-    for categoria, total in totais.items():
-        print(f"{categoria}: R$ {total:.2f}")
-    print(f"\nTotal do mês: R$ {sum(totais.values()):.2f}")
-
-def escolher(gastos):
-    listar(gastos)
-    if not gastos:
-        return None
-    texto = input("Número do gasto (Enter para cancelar): ")
-    if texto == "":
-        return None
-    if not texto.isdigit() or not 1 <= int(texto) <= len(gastos):
-        print("Número inválido.")
-        return None
-    return int(texto) - 1
+    total = 0
+    for categoria, soma in linhas:
+        print(f"{categoria}: {formatar(soma)}")
+        total += soma
+    print(f"\nTotal do mês: {formatar(total)}")
 
 
-def apagar(gastos):
-    i = escolher(gastos)
-    if i is None:
+def editar():
+    id_ = escolher_id()
+    if id_ is None:
         return
-    removido = gastos.pop(i)
-    salvar(gastos)
-    print(f"Apagado: {removido['descricao']}")
+    descricao, categoria = con.execute(
+        "SELECT descricao, categoria FROM gastos WHERE id = ?", (id_,)
+    ).fetchone()
 
-
-def editar(gastos):
-    i = escolher(gastos)
-    if i is None:
-        return
-    gasto = gastos[i]
     print("Enter mantém o valor atual.")
-    descricao = input(f"Descrição [{gasto['descricao']}]: ")
-    categoria = input(f"Categoria [{gasto.get('categoria', '')}]: ").lower()
-    if descricao:
-        gasto["descricao"] = descricao
-    if categoria:
-        gasto["categoria"] = categoria
+    nova_descricao = input(f"Descrição [{descricao}]: ") or descricao
+    nova_categoria = input(f"Categoria [{categoria}]: ").lower() or categoria
+    con.execute(
+        "UPDATE gastos SET descricao = ?, categoria = ? WHERE id = ?",
+        (nova_descricao, nova_categoria, id_),
+    )
     if input("Alterar valor? (s/N): ").lower() == "s":
-        gasto["valor"] = ler_valor()
+        con.execute(
+            "UPDATE gastos SET valor_centavos = ? WHERE id = ?", (ler_valor(), id_)
+        )
     if input("Alterar data? (s/N): ").lower() == "s":
-        gasto["data"] = ler_data()
-    salvar(gastos)
+        con.execute("UPDATE gastos SET data = ? WHERE id = ?", (ler_data(), id_))
+    con.commit()
     print("Gasto atualizado!")
 
-gastos = carregar()
+
+def apagar():
+    id_ = escolher_id()
+    if id_ is None:
+        return
+    con.execute("DELETE FROM gastos WHERE id = ?", (id_,))
+    con.commit()
+    print("Gasto apagado.")
+
 
 while True:
     print("\n1) Adicionar gasto")
@@ -137,16 +158,18 @@ while True:
     opcao = input("Escolha: ")
 
     if opcao == "1":
-        adicionar(gastos)
+        adicionar()
     elif opcao == "2":
-        listar(gastos)
+        listar()
     elif opcao == "3":
-        resumo(gastos)
+        resumo()
     elif opcao == "4":
-        editar(gastos)
+        editar()
     elif opcao == "5":
-        apagar(gastos)
+        apagar()
     elif opcao == "6":
         break
     else:
         print("Opção inválida.")
+
+con.close()
