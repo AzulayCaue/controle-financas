@@ -1,2 +1,5 @@
 gastos.json
 financas.db
+.venv/
+__pycache__/
+*.pyc

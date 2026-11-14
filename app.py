@@ -1,8 +1,11 @@
 import sqlite3
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from pathlib import Path
 
-con = sqlite3.connect("financas.db")
+
+DB = Path(__file__).parent / "financas.db"
+con = sqlite3.connect(DB)
 con.execute(
     """
     CREATE TABLE IF NOT EXISTS gastos (
@@ -29,10 +32,14 @@ def ler_valor():
         except InvalidOperation:
             print("Valor inválido. Digite um número, ex: 25,50")
             continue
-        if not valor.is_finite() or valor <= 0:
-            print("O valor precisa ser um número maior que zero.")
+        if not valor.is_finite():
+            print("Digite um número válido.")
             continue
-        return int((valor * 100).to_integral_value())
+        centavos = int((valor * 100).to_integral_value(rounding=ROUND_HALF_UP))
+        if centavos <= 0 or centavos > 10**12:
+            print("O valor precisa estar entre R$ 0,01 e R$ 10 bilhões.")
+            continue
+        return centavos   
 
 
 def ler_data():
@@ -46,9 +53,17 @@ def ler_data():
             print("Data inválida. Use o formato 2026-11-12")
 
 
+def ler_texto(pergunta):
+    while True:
+        texto = input(pergunta).strip()
+        if texto:
+            return texto
+        print("Esse campo não pode ficar vazio.")
+
+
 def adicionar():
-    descricao = input("Descrição: ")
-    categoria = input("Categoria (ex: mercado, transporte): ").lower()
+    descricao = ler_texto("Descrição: ")
+    categoria = ler_texto("Categoria (ex: mercado, transporte): ").lower()
     valor = ler_valor()
     data = ler_data()
     con.execute(
@@ -89,17 +104,26 @@ def escolher_id():
 
 def resumo():
     mes_atual = date.today().strftime("%Y-%m")
-    mes = input(f"Mês (AAAA-MM, Enter = {mes_atual}): ") or mes_atual
+    mes = input(f"Mês (AAAA-MM, Enter = {mes_atual}): ").strip() or mes_atual
+
+
+    try:
+        if len(mes) != 7:
+            raise ValueError
+        date.fromisoformat(mes + "-01")
+    except ValueError:
+        print("Mês inválido. Use AAAA-MM, ex: 2026-11")
+        return
 
     linhas = con.execute(
         """
         SELECT categoria, SUM(valor_centavos)
         FROM gastos
-        WHERE data LIKE ?
+        WHERE strftime('%Y-%m', data) = ?
         GROUP BY categoria
         ORDER BY SUM(valor_centavos) DESC
         """,
-        (mes + "%",),
+        (mes,),
     ).fetchall()
 
     if not linhas:
@@ -123,8 +147,8 @@ def editar():
     ).fetchone()
 
     print("Enter mantém o valor atual.")
-    nova_descricao = input(f"Descrição [{descricao}]: ") or descricao
-    nova_categoria = input(f"Categoria [{categoria}]: ").lower() or categoria
+    nova_descricao = input(f"Descrição [{descricao}]: ").strip() or descricao
+    nova_categoria = input(f"Categoria [{categoria}]: ").strip().lower() or categoria
     con.execute(
         "UPDATE gastos SET descricao = ?, categoria = ? WHERE id = ?",
         (nova_descricao, nova_categoria, id_),
@@ -148,28 +172,36 @@ def apagar():
     print("Gasto apagado.")
 
 
-while True:
-    print("\n1) Adicionar gasto")
-    print("2) Listar gastos")
-    print("3) Resumo do mês por categoria")
-    print("4) Editar gasto")
-    print("5) Apagar gasto")
-    print("6) Sair")
-    opcao = input("Escolha: ")
+def main():
+    try:
+        while True:
+            print("\n1) Adicionar Gasto")
+            print("2) Listar gastos")
+            print("3) Resumo do mês por categoria")
+            print("4) Editar gasto")
+            print("5) Apagar gasto")
+            print("6) Sair")
+            opcao = input("Escolha: ")
 
-    if opcao == "1":
-        adicionar()
-    elif opcao == "2":
-        listar()
-    elif opcao == "3":
-        resumo()
-    elif opcao == "4":
-        editar()
-    elif opcao == "5":
-        apagar()
-    elif opcao == "6":
-        break
-    else:
-        print("Opção inválida.")
+            if opcao == "1":
+                adicionar()
+            elif opcao == "2":
+                listar()
+            elif opcao == "3":
+                resumo()
+            elif opcao == "4":
+                editar()
+            elif opcao == "5":
+                apagar()
+            elif opcao == "6":
+                break
+            else:
+                print("Opção inválida.")
+    except (KeyboardInterrupt, EOFError):
+        print("\nSaindo.")
+    finally:
+        con.close()
 
-con.close()
+
+if __name__ == "__main__":
+    main()
