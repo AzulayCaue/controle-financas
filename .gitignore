@@ -4,3 +4,4 @@ gastos_exportados.csv
 .venv/
 __pycache__/
 *.pyc   
+*.db
