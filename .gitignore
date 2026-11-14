@@ -1,5 +1,6 @@
 gastos.json
 financas.db
+gastos_exportados.csv
 .venv/
 __pycache__/
-*.pyc
+*.pyc   

@@ -1,4 +1,5 @@
 import sqlite3
+import csv
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
@@ -21,7 +22,8 @@ con.commit()
 
 
 def formatar(centavos):
-    return f"R$ {centavos / 100:.2f}"
+    reais, cents = divmod(centavos, 100)
+    return f"R$ {reais:,}".replace(",", ".") + f",{cents:02d}"
 
 
 def ler_valor():
@@ -172,6 +174,23 @@ def apagar():
     print("Gasto apagado.")
 
 
+def exportar():
+    linhas = con.execute(
+        "SELECT id, data, descricao, categoria, valor_centavos FROM gastos ORDER BY data, id"
+    ).fetchall()
+    if not linhas:
+        print("Nenhum gasto para exportar.")
+        return
+
+    arquivo = Path(__file__).parent / "gastos_exportados.csv"
+    with open(arquivo, "w", newline="", encoding="utf-8-sig") as f:
+        escritor = csv.writer(f, delimiter=";")
+        escritor.writerow(["id", "data", "descricao", "categoria", "valor"])
+        for id_, data, descricao, categoria, valor in linhas:
+            escritor.writerow([id_, data, descricao, categoria, f"{valor // 100},{valor % 100:02d}"])
+    print(f"Exportado para: {arquivo}")
+
+
 def main():
     try:
         while True:
@@ -180,7 +199,8 @@ def main():
             print("3) Resumo do mês por categoria")
             print("4) Editar gasto")
             print("5) Apagar gasto")
-            print("6) Sair")
+            print("6) Exportar para CSV")
+            print("7) Sair")
             opcao = input("Escolha: ")
 
             if opcao == "1":
@@ -194,6 +214,8 @@ def main():
             elif opcao == "5":
                 apagar()
             elif opcao == "6":
+                exportar()
+            elif opcao == "7":
                 break
             else:
                 print("Opção inválida.")
