@@ -224,6 +224,95 @@ def exportar():
     print(f"Exportado para: {arquivo}")
 
 
+def listar_categorias():
+    # LEFT JOIN mantém categorias sem nenhum gasto (COUNT dá 0 nelas).
+    # Com JOIN comum, elas sumiriam da lista.
+    linhas = con.execute(
+        """
+        SELECT c.id, c.nome, COUNT(g.id)
+        FROM categorias c
+        LEFT JOIN gastos g ON g.categoria_id = c.id
+        GROUP BY c.id, c.nome
+        ORDER BY c.nome
+        """
+    ).fetchall()
+    if not linhas:
+        print("Nenhuma categoria ainda.")
+        return False
+    for id_, nome, qtd in linhas:
+        print(f"{id_}) {nome} ({qtd} gasto{'s' if qtd != 1 else ''})")
+    return True
+
+
+def escolher_categoria_id():
+    if not listar_categorias():
+        return None
+    texto = input("ID da categoria (Enter para cancelar): ")
+    if texto == "":
+        return None
+    if not texto.isdigit():
+        print("ID inválido.")
+        return None
+    existe = con.execute(
+        "SELECT 1 FROM categorias WHERE id = ?", (int(texto),)
+    ).fetchone()
+    if not existe:
+        print("Não existe categoria com esse ID.")
+        return None
+    return int(texto)
+
+def renomear_categoria():
+    id_ = escolher_categoria_id()
+    if id_ is None:
+        return
+    novo_nome = ler_texto("Novo nome: ").lower()
+    try:
+        con.execute("UPDATE categorias SET nome = ? WHERE id = ?", (novo_nome, id_))
+        con.commit()
+    except sqlite3.IntegrityError:
+        # A coluna nome é UNIQUE: o banco recusa nomes repetidos
+        con.rollback()
+        print("Já existe uma categoria com esse nome.")
+        return
+    print("Categoria renomeada!")
+
+
+def apagar_categoria():
+    id_ = escolher_categoria_id()
+    if id_ is None:
+        return
+    try:
+        con.execute("DELETE FROM categorias WHERE id = ?", (id_,))
+        con.commit()
+    except sqlite3.IntegrityError:
+        #Só acontece por causa do PRAGMA foreign_keys = ON do topo do arquivo
+        con.rollback()
+        print("Não dá para apagar: há gastos usando essa categoria.")
+        return
+    print("Categoria apagada.")
+
+
+def menu_categorias():
+    while True:
+        print("\n--- Categorias ---")
+        print("1) Listar")
+        print("2) Renomear")
+        print("3) Apagar")
+        print("4) Voltar")
+        opcao = input("Escolha: ")
+
+        if opcao == "1":
+            listar_categorias()
+        elif opcao == "2":
+            renomear_categoria()
+        elif opcao == "3":
+            apagar_categoria()
+        elif opcao == "4":
+            break
+        else:
+            print("Opção inválida.")
+
+
 def main():
     try:
         while True:
@@ -233,7 +322,8 @@ def main():
             print("4) Editar gasto")
             print("5) Apagar gasto")
             print("6) Exportar para CSV")
-            print("7) Sair")
+            print("7) Categorias")
+            print("8) Sair")
             opcao = input("Escolha: ")
 
             if opcao == "1":
@@ -249,6 +339,8 @@ def main():
             elif opcao == "6":
                 exportar()
             elif opcao == "7":
+                menu_categorias()
+            elif opcao == "8":
                 break
             else:
                 print("Opção inválida.")
