@@ -216,11 +216,15 @@ def exportar():
         return
 
     arquivo = Path(__file__).parent / "gastos_exportados.csv"
-    with open(arquivo, "w", newline="", encoding="utf-8-sig") as f:
-        escritor = csv.writer(f, delimiter=";")
-        escritor.writerow(["id", "data", "descricao", "categoria", "valor"])
-        for id_, data, descricao, categoria, valor in linhas:
-            escritor.writerow([id_, data, descricao, categoria, f"{valor // 100},{valor % 100:02d}"])
+    try:
+        with open(arquivo, "w", newline="", encoding="utf-8-sig") as f:
+            escritor = csv.writer(f, delimiter=";")
+            escritor.writerow(["id", "data", "descricao", "categoria", "valor"])
+            for id_, data, descricao, categoria, valor in linhas:
+                escritor.writerow([id_, data, descricao, categoria, f"{valor // 100},{valor % 100:02d}"])
+    except PermissionError:
+        print("Não foi possível gravar o CSV. Feche o arquivo no Excel e tente de novo.")
+        return
     print(f"Exportado para: {arquivo}")
 
 
