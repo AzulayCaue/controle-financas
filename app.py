@@ -7,12 +7,21 @@ from pathlib import Path
 
 DB = Path(__file__).parent / "financas.db"
 con = sqlite3.connect(DB)
+con.execute("PRAGMA foreign_keys = ON")
+con.execute(
+    """
+    CREATE TABLE IF NOT EXISTS categorias (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL UNIQUE
+    )
+    """
+)
 con.execute(
     """
     CREATE TABLE IF NOT EXISTS gastos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         descricao TEXT NOT NULL,
-        categoria TEXT NOT NULL,
+        categoria_id INTEGER NOT NULL REFERENCES categorias(id),
         valor_centavos INTEGER NOT NULL,
         data TEXT NOT NULL
     )
@@ -63,22 +72,34 @@ def ler_texto(pergunta):
         print("Esse campo não pode ficar vazio.")
 
 
+def obter_categoria_id(nome):
+    # INSERT OR IGNORE: se o nome já existe (UNIQUE), ignora sem dar erro.
+    con.execute("INSERT OR IGNORE INTO categorias (nome) VALUES (?)", (nome,))
+    return con.execute("SELECT id FROM categorias WHERE nome = ?", (nome,)).fetchone()[0]
+
+
 def adicionar():
     descricao = ler_texto("Descrição: ")
     categoria = ler_texto("Categoria (ex: mercado, transporte): ").lower()
     valor = ler_valor()
     data = ler_data()
+    categoria_id = obter_categoria_id(categoria)
     con.execute(
-        "INSERT INTO gastos (descricao, categoria, valor_centavos, data) VALUES (?, ?, ?, ?)",
-        (descricao, categoria, valor, data),
+        "INSERT INTO gastos (descricao, categoria_id, valor_centavos, data) VALUES (?, ?, ?, ?)",
+        (descricao, categoria_id, valor, data),
     )
-    con.commit()
+    con.commit() #categoria nova + gasto entram juntos, na mesma transação
     print("Gasto registrado!")
 
 
 def listar():
     linhas = con.execute(
-        "SELECT id, data, descricao, categoria, valor_centavos FROM gastos ORDER BY data, id"
+        """
+        SELECT g.id, g.data, g.descricao, c.nome, g.valor_centavos
+        FROM gastos g
+        JOIN categorias c ON c.id = g.categoria_id
+        ORDER BY g.data, g.id
+        """
     ).fetchall()
     if not linhas:
         print("Nenhum gasto ainda.")
@@ -119,11 +140,12 @@ def resumo():
 
     linhas = con.execute(
         """
-        SELECT categoria, SUM(valor_centavos)
-        FROM gastos
-        WHERE strftime('%Y-%m', data) = ?
-        GROUP BY categoria
-        ORDER BY SUM(valor_centavos) DESC
+        SELECT c.nome, SUM(valor_centavos)
+        FROM gastos g
+        JOIN categorias c ON c.id = g.categoria_id
+        WHERE strftime('%Y-%m', g.data) = ?
+        GROUP BY c.nome
+        ORDER BY SUM(g.valor_centavos) DESC
         """,
         (mes,),
     ).fetchall()
@@ -145,15 +167,21 @@ def editar():
     if id_ is None:
         return
     descricao, categoria = con.execute(
-        "SELECT descricao, categoria FROM gastos WHERE id = ?", (id_,)
+        """
+        SELECT g.descricao, c.nome
+        FROM gastos g
+        JOIN categorias c ON c.id = g.categoria_id
+        WHERE g.id = ?
+        """, 
+        (id_,)
     ).fetchone()
 
     print("Enter mantém o valor atual.")
     nova_descricao = input(f"Descrição [{descricao}]: ").strip() or descricao
     nova_categoria = input(f"Categoria [{categoria}]: ").strip().lower() or categoria
     con.execute(
-        "UPDATE gastos SET descricao = ?, categoria = ? WHERE id = ?",
-        (nova_descricao, nova_categoria, id_),
+        "UPDATE gastos SET descricao = ?, categoria_id = ? WHERE id = ?",
+        (nova_descricao, obter_categoria_id(nova_categoria), id_),
     )
     if input("Alterar valor? (s/N): ").lower() == "s":
         con.execute(
@@ -176,7 +204,12 @@ def apagar():
 
 def exportar():
     linhas = con.execute(
-        "SELECT id, data, descricao, categoria, valor_centavos FROM gastos ORDER BY data, id"
+        """
+        SELECT g.id, g.data, g.descricao, c.nome, g.valor_centavos
+        FROM gastos g
+        JOIN categorias c ON c.id = g.categoria_id
+        ORDER BY g.data, g.id
+        """
     ).fetchall()
     if not linhas:
         print("Nenhum gasto para exportar.")
