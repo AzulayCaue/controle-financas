@@ -35,23 +35,30 @@ def formatar(centavos):
     return f"R$ {reais:,}".replace(",", ".") + f",{cents:02d}"
 
 
+def parse_valor(texto):
+    """Converte texto em centavos (int). Levanta ValueError com a mensagem para o usuário."""
+    texto = texto.strip()
+    if "," in texto:
+        # com vírgula: a vírgula é o decimal e os pontos são milhar ("1.234,50")
+        texto = texto.replace(".", "").replace(",", ".")
+    try:
+        valor = Decimal(texto)
+    except InvalidOperation:
+        raise ValueError("Valor inválido. Digite um número, ex: 25,50") from None
+    if not valor.is_finite():
+        raise ValueError("Digite um número válido.")
+    if valor <= 0 or valor > Decimal(10**10):
+        raise ValueError("O valor precisa estar entre R$ 0,01 e R$ 10 bilhões.")
+    if valor != valor.quantize(Decimal("0.01")):
+        raise ValueError("Use o máximo 2 casas decimais.")
+    return int(valor * 100)
+
 def ler_valor():
     while True:
-        texto = input("Valor: ").replace(",", ".")
         try:
-            valor = Decimal(texto)
-        except InvalidOperation:
-            print("Valor inválido. Digite um número, ex: 25,50")
-            continue
-        if not valor.is_finite():
-            print("Digite um número válido.")
-            continue
-        centavos = int((valor * 100).to_integral_value(rounding=ROUND_HALF_UP))
-        if centavos <= 0 or centavos > 10**12:
-            print("O valor precisa estar entre R$ 0,01 e R$ 10 bilhões.")
-            continue
-        return centavos   
-
+            return parse_valor(input("Valor: "))
+        except ValueError as erro:
+            print(erro)
 
 def ler_data():
     while True:

@@ -5,3 +5,4 @@ gastos_exportados.csv
 __pycache__/
 *.pyc   
 *.db
+*.csv
