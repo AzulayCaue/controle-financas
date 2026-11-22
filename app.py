@@ -1,5 +1,6 @@
 import sqlite3
 import csv
+import servicos
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
@@ -79,35 +80,17 @@ def ler_texto(pergunta):
         print("Esse campo não pode ficar vazio.")
 
 
-def obter_categoria_id(nome):
-    # INSERT OR IGNORE: se o nome já existe (UNIQUE), ignora sem dar erro.
-    con.execute("INSERT OR IGNORE INTO categorias (nome) VALUES (?)", (nome,))
-    return con.execute("SELECT id FROM categorias WHERE nome = ?", (nome,)).fetchone()[0]
-
-
-def adicionar():
+def adicionar(con):
     descricao = ler_texto("Descrição: ")
     categoria = ler_texto("Categoria (ex: mercado, transporte): ").lower()
     valor = ler_valor()
     data = ler_data()
-    categoria_id = obter_categoria_id(categoria)
-    con.execute(
-        "INSERT INTO gastos (descricao, categoria_id, valor_centavos, data) VALUES (?, ?, ?, ?)",
-        (descricao, categoria_id, valor, data),
-    )
-    con.commit() #categoria nova + gasto entram juntos, na mesma transação
+    servicos.adicionar_gasto(con, descricao, categoria, valor, data)
     print("Gasto registrado!")
 
 
-def listar():
-    linhas = con.execute(
-        """
-        SELECT g.id, g.data, g.descricao, c.nome, g.valor_centavos
-        FROM gastos g
-        JOIN categorias c ON c.id = g.categoria_id
-        ORDER BY g.data, g.id
-        """
-    ).fetchall()
+def listar(con):
+    linhas = servicos.listar_gastos(con)
     if not linhas:
         print("Nenhum gasto ainda.")
         return False
@@ -116,20 +99,20 @@ def listar():
     return True
 
 
-def escolher_id():
-    if not listar():
+def escolher_id(con):
+    if not listar(con):
         return None
-    texto = input("ID do gasto (Enter para cancelar): ")
+    texto = input("ID do gasto (Enter para cancelar): ").strip()
     if texto == "":
         return None
-    if not texto.isdigit():
+    if not texto.isdecimal():
         print("ID inválido.")
         return None
-    existe = con.execute("SELECT 1 FROM gastos WHERE id = ?", (int(texto),)).fetchone()
-    if not existe:
+    gasto_id = int(texto)
+    if not servicos.gasto_existe(con, gasto_id):
         print("Não existe gasto com esse ID.")
         return None
-    return int(texto)
+    return gasto_id
 
 
 def resumo():
